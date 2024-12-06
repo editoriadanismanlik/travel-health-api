@@ -25,6 +25,22 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// Root route
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Welcome to Travel Health API',
+    version: '1.0.0',
+    endpoints: {
+      auth: '/api/auth',
+      jobs: '/api/jobs',
+      tasks: '/api/tasks',
+      earnings: '/api/earnings',
+      test: '/api/test',
+      health: '/health'
+    }
+  });
+});
+
 // Routes
 app.use('/api/jobs', jobRoutes);
 app.use('/api/tasks', taskRoutes);
@@ -34,7 +50,11 @@ app.use('/api/test', testRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', environment: process.env.NODE_ENV });
+  res.json({ 
+    status: 'healthy', 
+    environment: process.env.NODE_ENV,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Error handling middleware
