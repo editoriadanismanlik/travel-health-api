@@ -9,8 +9,19 @@ const authRoutes = require('./routes/auth');
 
 const app = express();
 
+// CORS configuration
+const corsOptions = {
+  origin: [
+    'https://travel-health-saas.netlify.app',
+    'http://localhost:5173', // For local development
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
+  credentials: true,
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Routes
