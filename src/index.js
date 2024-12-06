@@ -6,6 +6,7 @@ const jobRoutes = require('./routes/jobs');
 const taskRoutes = require('./routes/tasks');
 const earningsRoutes = require('./routes/earnings');
 const authRoutes = require('./routes/auth');
+const testRoutes = require('./routes/test');
 
 const app = express();
 
@@ -29,10 +30,11 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/earnings', earningsRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/test', testRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy' });
+  res.json({ status: 'healthy', environment: process.env.NODE_ENV });
 });
 
 // Error handling middleware
