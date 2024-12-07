@@ -1,116 +1,100 @@
-import { Server, Socket } from 'socket.io';
-import { verifyToken } from '../middleware/auth';
+import { Server } from 'socket.io';
+import { WebSocketLoadBalancer } from './WebSocketLoadBalancer';
 import logger from '../utils/logger';
-
-interface QueuedMessage {
-  event: string;
-  data: any;
-  timestamp: number;
-}
+import { config } from '../config/config';
 
 export class WebSocketManager {
   private static instance: WebSocketManager;
   private io: Server;
-  private connectedClients: Map<string, Socket>;
-  private messageQueue: QueuedMessage[];
-  private readonly maxQueueSize: number;
+  private loadBalancer: WebSocketLoadBalancer;
 
-  private constructor(io: Server) {
-    this.io = io;
-    this.connectedClients = new Map();
-    this.messageQueue = [];
-    this.maxQueueSize = 1000;
-    this.initialize();
+  private constructor(server: any) {
+    this.io = new Server(server, {
+      cors: {
+        origin: config.cors.origin,
+        methods: ['GET', 'POST'],
+        credentials: true
+      },
+      pingTimeout: 60000,
+      pingInterval: 25000
+    });
+
+    // Initialize load balancer
+    this.loadBalancer = WebSocketLoadBalancer.getInstance(this.io, {
+      redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+      maxConnectionsPerClient: parseInt(process.env.WS_MAX_CONNECTIONS_PER_CLIENT || '10'),
+      windowMs: parseInt(process.env.WS_RATE_LIMIT_WINDOW_MS || '60000'),
+      maxRequestsPerWindow: parseInt(process.env.WS_MAX_REQUESTS_PER_WINDOW || '1000')
+    });
+
+    this.setupEventHandlers();
   }
 
-  public static getInstance(io?: Server): WebSocketManager {
-    if (!WebSocketManager.instance && io) {
-      WebSocketManager.instance = new WebSocketManager(io);
+  public static getInstance(server?: any): WebSocketManager {
+    if (!WebSocketManager.instance && server) {
+      WebSocketManager.instance = new WebSocketManager(server);
     }
     return WebSocketManager.instance;
   }
 
-  private initialize(): void {
-    this.io.use(async (socket, next) => {
-      try {
-        const token = socket.handshake.auth.token;
-        if (!token) {
-          throw new Error('Authentication token required');
-        }
-
-        const decoded = await verifyToken(token);
-        socket.data.user = decoded;
-        next();
-      } catch (error) {
-        logger.error('WebSocket authentication error:', error);
-        next(new Error('Authentication failed'));
-      }
-    });
-
+  private setupEventHandlers() {
     this.io.on('connection', (socket) => {
-      this.handleConnection(socket);
+      logger.info(`Client connected: ${socket.id}`);
+
+      // Handle job updates
+      socket.on('joinJob', (jobId: string) => {
+        socket.join(`job:${jobId}`);
+        logger.info(`Client ${socket.id} joined job room: ${jobId}`);
+      });
+
+      socket.on('leaveJob', (jobId: string) => {
+        socket.leave(`job:${jobId}`);
+        logger.info(`Client ${socket.id} left job room: ${jobId}`);
+      });
+
+      // Handle task updates
+      socket.on('joinTask', (taskId: string) => {
+        socket.join(`task:${taskId}`);
+        logger.info(`Client ${socket.id} joined task room: ${taskId}`);
+      });
+
+      socket.on('leaveTask', (taskId: string) => {
+        socket.leave(`task:${taskId}`);
+        logger.info(`Client ${socket.id} left task room: ${taskId}`);
+      });
+
+      socket.on('disconnect', () => {
+        logger.info(`Client disconnected: ${socket.id}`);
+      });
     });
   }
 
-  private handleConnection(socket: Socket): void {
-    const userId = socket.data.user.id;
-    this.connectedClients.set(userId, socket);
-    logger.info(`Client connected: ${userId}`);
+  public emitJobUpdate(jobId: string, data: any) {
+    this.io.to(`job:${jobId}`).emit('jobUpdate', data);
+    logger.info(`Emitted job update for job: ${jobId}`);
+  }
 
-    socket.on('disconnect', () => {
-      this.connectedClients.delete(userId);
-      logger.info(`Client disconnected: ${userId}`);
+  public emitTaskUpdate(taskId: string, data: any) {
+    this.io.to(`task:${taskId}`).emit('taskUpdate', data);
+    logger.info(`Emitted task update for task: ${taskId}`);
+  }
+
+  public broadcastSystemMessage(message: string) {
+    this.io.emit('systemMessage', { message, timestamp: new Date() });
+    logger.info(`Broadcasted system message: ${message}`);
+  }
+
+  public getStats() {
+    return this.loadBalancer.getStats();
+  }
+
+  public async close() {
+    await this.loadBalancer.close();
+    await new Promise<void>((resolve) => {
+      this.io.close(() => {
+        logger.info('WebSocket server closed');
+        resolve();
+      });
     });
-
-    // Handle custom events
-    socket.on('message', (data) => this.handleMessage(socket, data));
-    socket.on('error', (error) => this.handleError(socket, error));
-  }
-
-  private handleMessage(socket: Socket, data: any): void {
-    try {
-      const message: QueuedMessage = {
-        event: 'message',
-        data,
-        timestamp: Date.now()
-      };
-
-      if (this.messageQueue.length >= this.maxQueueSize) {
-        this.messageQueue.shift(); // Remove oldest message
-      }
-      this.messageQueue.push(message);
-
-      // Broadcast to all connected clients except sender
-      socket.broadcast.emit('message', data);
-    } catch (error) {
-      logger.error('Error handling message:', error);
-      socket.emit('error', { message: 'Failed to process message' });
-    }
-  }
-
-  private handleError(socket: Socket, error: any): void {
-    logger.error('WebSocket error:', error);
-    socket.emit('error', { message: 'Internal server error' });
-  }
-
-  public getConnectedClients(): number {
-    return this.connectedClients.size;
-  }
-
-  public getQueueSize(): number {
-    return this.messageQueue.length;
-  }
-
-  public broadcastMessage(event: string, data: any): void {
-    this.io.emit(event, data);
-  }
-
-  public sendToUser(userId: string, event: string, data: any): boolean {
-    const socket = this.connectedClients.get(userId);
-    if (socket) {
-      socket.emit(event, data);
-      return true;
-    }
-    return false;
   }
 }

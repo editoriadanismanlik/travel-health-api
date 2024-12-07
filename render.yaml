@@ -17,5 +17,15 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
+      - key: WS_MAX_CONNECTIONS_PER_CLIENT
+        value: 10
+      - key: WS_RATE_LIMIT_WINDOW_MS
+        value: 60000
+      - key: WS_MAX_REQUESTS_PER_WINDOW
+        value: 1000
     autoDeploy: true
     healthCheckPath: /api/health
+    disk:
+      name: travel-health-data
+      mountPath: /data
+      sizeGB: 1

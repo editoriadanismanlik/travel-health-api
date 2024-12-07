@@ -16,5 +16,16 @@ export const config = {
   cors: {
     origin: process.env.FRONTEND_URL || 'https://travel-healths.netlify.app',
     credentials: true
+  },
+  redis: {
+    url: process.env.REDIS_URL || 'redis://localhost:6379',
+    options: {
+      retryStrategy: (times: number) => Math.min(times * 50, 2000)
+    }
+  },
+  websocket: {
+    maxConnectionsPerClient: parseInt(process.env.WS_MAX_CONNECTIONS_PER_CLIENT || '10', 10),
+    rateLimitWindowMs: parseInt(process.env.WS_RATE_LIMIT_WINDOW_MS || '60000', 10),
+    maxRequestsPerWindow: parseInt(process.env.WS_MAX_REQUESTS_PER_WINDOW || '1000', 10)
   }
 };

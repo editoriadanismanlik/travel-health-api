@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import { createServer } from 'http';
 import { WebSocketService } from './services/websocket';
+import { config } from './config/config';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -13,6 +14,7 @@ import tasksRoutes from './routes/tasks';
 import earningsRoutes from './routes/earnings';
 import analyticsRoutes from './routes/analytics';
 import userPreferencesRoutes from './routes/userPreferences';
+import healthRoutes from './routes/health';
 
 // Middleware
 import {
@@ -48,6 +50,7 @@ app.use('/api/tasks', tasksRoutes);
 app.use('/api/earnings', earningsRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/user/preferences', userPreferencesRoutes);
+app.use('/api', healthRoutes);
 
 // Basic route
 app.get('/', (req, res) => {
@@ -67,16 +70,14 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 WebSocketService.getInstance(server);
 
 // Connect to MongoDB
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://editoriadanismanlik:fpa7kuHO3RJpO3gR@cluster0.u0oyr.mongodb.net/editoriadanismanlik';
-const PORT = process.env.PORT || 5000;
-
-mongoose.connect(MONGODB_URI)
+mongoose.connect(config.mongodb.uri)
   .then(() => {
     console.log('Connected to MongoDB');
-    server.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
+    server.listen(config.server.port, () => {
+      console.log(`Server is running on port ${config.server.port}`);
     });
   })
   .catch((error) => {
     console.error('MongoDB connection error:', error);
+    process.exit(1);
   });

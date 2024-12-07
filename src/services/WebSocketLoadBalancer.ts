@@ -20,8 +20,10 @@ interface LoadBalancerStats {
 export class WebSocketLoadBalancer {
   private static instance: WebSocketLoadBalancer;
   private io: Server;
-  private redisClient: any;
-  private rateLimiter: RateLimiterRedis;
+  private redisClient!: ReturnType<typeof createClient>;
+  private pubClient!: ReturnType<typeof createClient>;
+  private subClient!: ReturnType<typeof createClient>;
+  private rateLimiter!: RateLimiterRedis;
   private readonly config: LoadBalancerConfig;
   private stats: LoadBalancerStats;
 
@@ -33,7 +35,10 @@ export class WebSocketLoadBalancer {
       rateLimitedConnections: 0,
       lastResetTime: new Date()
     };
-    this.initialize();
+    this.initialize().catch(error => {
+      logger.error('Failed to initialize WebSocket Load Balancer:', error);
+      throw error;
+    });
   }
 
   public static getInstance(io?: Server, config?: LoadBalancerConfig): WebSocketLoadBalancer {
@@ -45,28 +50,31 @@ export class WebSocketLoadBalancer {
 
   private async initialize() {
     try {
-      // Initialize Redis client
-      this.redisClient = createClient({
-        url: this.config.redisUrl
-      });
+      // Initialize Redis clients
+      this.redisClient = createClient({ url: this.config.redisUrl });
+      this.pubClient = this.redisClient.duplicate();
+      this.subClient = this.redisClient.duplicate();
 
-      await this.redisClient.connect();
-
-      // Initialize Redis adapter for Socket.IO
-      const pubClient = this.redisClient.duplicate();
-      const subClient = this.redisClient.duplicate();
-
-      await Promise.all([pubClient.connect(), subClient.connect()]);
-
-      this.io.adapter(createAdapter(pubClient, subClient));
+      // Connect Redis clients
+      await Promise.all([
+        this.redisClient.connect(),
+        this.pubClient.connect(),
+        this.subClient.connect()
+      ]);
 
       // Initialize rate limiter
       this.rateLimiter = new RateLimiterRedis({
         storeClient: this.redisClient,
         points: this.config.maxRequestsPerWindow,
-        duration: this.config.windowMs / 1000, // convert ms to seconds
-        blockDuration: 60 * 15 // Block for 15 minutes
+        duration: this.config.windowMs / 1000,
+        blockDuration: 60 * 2 // Block for 2 minutes
       });
+
+      // Set up Redis adapter
+      this.io.adapter(createAdapter(this.pubClient, this.subClient));
+
+      // Set up connection handling
+      this.io.on('connection', this.handleConnection.bind(this));
 
       logger.info('WebSocket Load Balancer initialized successfully');
     } catch (error) {
@@ -75,29 +83,41 @@ export class WebSocketLoadBalancer {
     }
   }
 
-  public async getStats(): Promise<LoadBalancerStats> {
-    return this.stats;
-  }
+  private async handleConnection(socket: any) {
+    try {
+      // Check rate limit
+      await this.rateLimiter.consume(socket.handshake.address);
+      
+      // Update stats
+      this.stats.activeConnections++;
+      
+      socket.on('disconnect', () => {
+        this.stats.activeConnections--;
+      });
 
-  public updateStats(type: 'connect' | 'disconnect' | 'rateLimit'): void {
-    switch (type) {
-      case 'connect':
-        this.stats.activeConnections++;
-        break;
-      case 'disconnect':
-        this.stats.activeConnections = Math.max(0, this.stats.activeConnections - 1);
-        break;
-      case 'rateLimit':
-        this.stats.rateLimitedConnections++;
-        break;
+      logger.info(`New WebSocket connection: ${socket.id}`);
+    } catch (error) {
+      this.stats.rateLimitedConnections++;
+      socket.disconnect(true);
+      logger.warn(`Rate limited connection from ${socket.handshake.address}`);
     }
   }
 
-  public resetStats(): void {
-    this.stats = {
-      activeConnections: 0,
-      rateLimitedConnections: 0,
-      lastResetTime: new Date()
-    };
+  public getStats(): LoadBalancerStats {
+    return { ...this.stats };
+  }
+
+  public async close() {
+    try {
+      await Promise.all([
+        this.redisClient.quit(),
+        this.pubClient.quit(),
+        this.subClient.quit()
+      ]);
+      logger.info('WebSocket Load Balancer closed successfully');
+    } catch (error) {
+      logger.error('Error closing WebSocket Load Balancer:', error);
+      throw error;
+    }
   }
 }
