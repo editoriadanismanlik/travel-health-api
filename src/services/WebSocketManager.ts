@@ -1,5 +1,5 @@
 import { Server } from 'socket.io';
-import { WebSocketLoadBalancer } from './WebSocketLoadBalancer';
+import { WebSocketLoadBalancer, LoadBalancerStats } from './WebSocketLoadBalancer';
 import logger from '../utils/logger';
 import { config } from '../config/config';
 
@@ -21,10 +21,10 @@ export class WebSocketManager {
 
     // Initialize load balancer
     this.loadBalancer = WebSocketLoadBalancer.getInstance(this.io, {
-      redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
-      maxConnectionsPerClient: parseInt(process.env.WS_MAX_CONNECTIONS_PER_CLIENT || '10'),
-      windowMs: parseInt(process.env.WS_RATE_LIMIT_WINDOW_MS || '60000'),
-      maxRequestsPerWindow: parseInt(process.env.WS_MAX_REQUESTS_PER_WINDOW || '1000')
+      redisUrl: config.redis.url,
+      maxConnectionsPerClient: config.websocket.maxConnectionsPerClient,
+      windowMs: config.websocket.rateLimitWindowMs,
+      maxRequestsPerWindow: config.websocket.maxRequestsPerWindow
     });
 
     this.setupEventHandlers();
@@ -84,7 +84,7 @@ export class WebSocketManager {
     logger.info(`Broadcasted system message: ${message}`);
   }
 
-  public getStats() {
+  public getStats(): LoadBalancerStats {
     return this.loadBalancer.getStats();
   }
 

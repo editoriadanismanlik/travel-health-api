@@ -11,7 +11,7 @@ interface LoadBalancerConfig {
   maxRequestsPerWindow: number;
 }
 
-interface LoadBalancerStats {
+export interface LoadBalancerStats {
   activeConnections: number;
   rateLimitedConnections: number;
   lastResetTime: Date;
