@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { ITask } from '../types';
 
 const taskSchema = new mongoose.Schema({
   jobId: {
@@ -8,7 +9,8 @@ const taskSchema = new mongoose.Schema({
   },
   title: {
     type: String,
-    required: true
+    required: true,
+    trim: true
   },
   description: {
     type: String,
@@ -24,13 +26,29 @@ const taskSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  priority: {
+    type: String,
+    enum: ['low', 'medium', 'high'],
+    default: 'medium'
+  },
+  dueDate: {
+    type: Date,
+    required: true
+  },
   completedAt: {
     type: Date
   },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
+  attachments: [{
+    url: String,
+    name: String,
+    type: String
+  }],
+  tags: [{
+    type: String,
+    trim: true
+  }]
+}, {
+  timestamps: true
 });
 
-export default mongoose.model('Task', taskSchema);
+export default mongoose.model<ITask>('Task', taskSchema);
