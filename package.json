@@ -6,8 +6,8 @@
   "scripts": {
     "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc",
-    "test": "jest",
+    "build": "tsc -p tsconfig.json",
+    "test": "jest --config jest.config.js",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "prepare": "if [ \"$NODE_ENV\" != \"production\" ]; then husky install; fi"
@@ -67,21 +67,5 @@
   ],
   "author": "",
   "license": "ISC",
-  "type": "module",
-  "jest": {
-    "moduleFileExtensions": [
-      "js",
-      "json",
-      "ts"
-    ],
-    "rootDir": "src",
-    "testRegex": ".spec.ts$",
-    "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
-    },
-    "collectCoverageFrom": [
-      "**/*.(t|j)s"
-    ],
-    "coverageDirectory": "../coverage"
-  }
+  "type": "module"
 }
