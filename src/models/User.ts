@@ -1,78 +1,85 @@
 import mongoose from 'mongoose';
 import { WidgetOption } from '../types/widget';
+import { IUser } from '../types';
 
 interface IUser extends mongoose.Document {
-  username: string;
   email: string;
   password: string;
-  role: 'user' | 'admin';
-  lastActive: Date;
-  mfa: {
-    enabled: boolean;
-    secret?: string;
-    backupCodes?: Array<{
-      code: string;
-      used: boolean;
-    }>;
-  };
+  name: string;
+  role: 'admin' | 'user';
+  mfaEnabled: boolean;
+  mfaSecret?: string;
+  backupCodes?: Array<{
+    code: string;
+    used: boolean;
+  }>;
   preferences?: {
-    widgets?: WidgetOption[];
-    [key: string]: any;
+    widgets?: any[];
+    theme?: string;
+    notifications?: {
+      email: boolean;
+      push: boolean;
+    };
   };
 }
 
 const UserSchema = new mongoose.Schema({
-  username: {
-    type: String,
-    required: true,
-    unique: true,
-  },
   email: {
     type: String,
     required: true,
     unique: true,
+    trim: true,
+    lowercase: true
   },
   password: {
     type: String,
+    required: true
+  },
+  name: {
+    type: String,
     required: true,
+    trim: true
   },
   role: {
     type: String,
-    enum: ['user', 'admin'],
-    default: 'user',
+    enum: ['admin', 'user'],
+    default: 'user'
   },
-  lastActive: {
-    type: Date,
-    default: Date.now,
+  mfaEnabled: {
+    type: Boolean,
+    default: false
   },
-  mfa: {
-    enabled: {
+  mfaSecret: {
+    type: String
+  },
+  backupCodes: [{
+    code: String,
+    used: {
       type: Boolean,
-      default: false,
-    },
-    secret: String,
-    backupCodes: [{
-      code: String,
-      used: {
-        type: Boolean,
-        default: false,
-      },
-    }],
-  },
+      default: false
+    }
+  }],
   preferences: {
     widgets: [{
-      id: String,
-      type: {
-        type: String,
-        enum: ['bar', 'line', 'pie'],
-      },
-      title: String,
-      enabled: Boolean,
-      order: Number,
+      type: mongoose.Schema.Types.Mixed
     }],
-  },
+    theme: {
+      type: String,
+      default: 'light'
+    },
+    notifications: {
+      email: {
+        type: Boolean,
+        default: true
+      },
+      push: {
+        type: Boolean,
+        default: true
+      }
+    }
+  }
 }, {
-  timestamps: true,
+  timestamps: true
 });
 
 export default mongoose.model<IUser>('User', UserSchema);

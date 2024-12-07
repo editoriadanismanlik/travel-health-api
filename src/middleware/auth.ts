@@ -1,22 +1,29 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { AuthRequest } from '../types';
 
-interface AuthRequest extends Request {
-  userId?: string;
-}
+export const verifyToken = async (token: string): Promise<any> => {
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+    return decoded;
+  } catch (error) {
+    throw new Error('Invalid token');
+  }
+};
 
-export const auth = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const auth = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
 
     if (!token) {
-      return res.status(401).json({ message: 'No token, authorization denied' });
+      throw new Error();
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { userId: string };
-    req.userId = decoded.userId;
+    const decoded = await verifyToken(token);
+    (req as AuthRequest).user = decoded;
+
     next();
   } catch (error) {
-    res.status(401).json({ message: 'Token is not valid' });
+    res.status(401).json({ error: 'Please authenticate' });
   }
 };

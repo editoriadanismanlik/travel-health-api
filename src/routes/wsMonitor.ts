@@ -13,8 +13,8 @@ router.get('/stats', async (req, res) => {
 
     const managerStats = {
       activeConnections: wsManager.getConnectedClients(),
-      messageQueueSize: 0, // Implement this in WebSocketManager
-      uptime: process.uptime()
+      messageQueueSize: wsManager.getQueueSize(),
+      uptime: Math.floor(process.uptime())
     };
 
     const loadBalancerStats = await loadBalancer.getStats();
@@ -22,7 +22,7 @@ router.get('/stats', async (req, res) => {
     res.json({
       ...managerStats,
       ...loadBalancerStats,
-      timestamp: new Date()
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     logger.error('Error fetching WebSocket stats:', error);
@@ -33,10 +33,12 @@ router.get('/stats', async (req, res) => {
 // Get WebSocket events
 router.get('/events', async (req, res) => {
   try {
-    // Implement event retrieval from your logging system
+    const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours
+    const endTime = new Date();
+
     const events = await logger.query({
-      from: new Date() - 24 * 60 * 60 * 1000, // Last 24 hours
-      until: new Date(),
+      start: startTime.toISOString(),
+      end: endTime.toISOString(),
       limit: 100,
       order: 'desc',
       fields: ['timestamp', 'level', 'message']

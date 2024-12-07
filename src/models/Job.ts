@@ -1,9 +1,11 @@
 import mongoose from 'mongoose';
+import { IJob } from '../types';
 
 const jobSchema = new mongoose.Schema({
   title: {
     type: String,
-    required: true
+    required: true,
+    trim: true
   },
   description: {
     type: String,
@@ -13,10 +15,6 @@ const jobSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  salary: {
-    type: Number,
-    required: true
-  },
   status: {
     type: String,
     enum: ['open', 'in-progress', 'completed'],
@@ -24,17 +22,29 @@ const jobSchema = new mongoose.Schema({
   },
   assignedTo: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+    ref: 'User',
+    required: true
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
-  createdAt: {
+  dueDate: {
     type: Date,
-    default: Date.now
-  }
+    required: true
+  },
+  priority: {
+    type: String,
+    enum: ['low', 'medium', 'high'],
+    default: 'medium'
+  },
+  tags: [{
+    type: String,
+    trim: true
+  }]
+}, {
+  timestamps: true
 });
 
-export default mongoose.model('Job', jobSchema);
+export default mongoose.model<IJob>('Job', jobSchema);

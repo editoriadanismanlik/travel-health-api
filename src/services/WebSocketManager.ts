@@ -1,208 +1,116 @@
-import { Server } from 'socket.io';
-import { Server as HttpServer } from 'http';
+import { Server, Socket } from 'socket.io';
 import { verifyToken } from '../middleware/auth';
 import logger from '../utils/logger';
 
-interface Client {
-  id: string;
-  userId: string;
-  lastHeartbeat: number;
-  messageQueue: any[];
+interface QueuedMessage {
+  event: string;
+  data: any;
+  timestamp: number;
 }
 
 export class WebSocketManager {
   private static instance: WebSocketManager;
   private io: Server;
-  private clients: Map<string, Client> = new Map();
-  private readonly HEARTBEAT_INTERVAL = 30000; // 30 seconds
-  private readonly CLIENT_TIMEOUT = 35000; // 35 seconds
-  private readonly MAX_RECONNECTION_ATTEMPTS = 5;
-  private readonly RECONNECTION_DELAY = 1000; // 1 second
+  private connectedClients: Map<string, Socket>;
+  private messageQueue: QueuedMessage[];
+  private readonly maxQueueSize: number;
 
-  private constructor(server: HttpServer) {
-    this.io = new Server(server, {
-      cors: {
-        origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-        methods: ['GET', 'POST'],
-        credentials: true,
-      },
-      pingTimeout: 10000,
-      pingInterval: 5000,
-    });
-
-    this.setupMiddleware();
-    this.setupEventHandlers();
-    this.startHeartbeatCheck();
+  private constructor(io: Server) {
+    this.io = io;
+    this.connectedClients = new Map();
+    this.messageQueue = [];
+    this.maxQueueSize = 1000;
+    this.initialize();
   }
 
-  public static getInstance(server?: HttpServer): WebSocketManager {
-    if (!WebSocketManager.instance && server) {
-      WebSocketManager.instance = new WebSocketManager(server);
+  public static getInstance(io?: Server): WebSocketManager {
+    if (!WebSocketManager.instance && io) {
+      WebSocketManager.instance = new WebSocketManager(io);
     }
     return WebSocketManager.instance;
   }
 
-  private setupMiddleware() {
+  private initialize(): void {
     this.io.use(async (socket, next) => {
       try {
         const token = socket.handshake.auth.token;
         if (!token) {
-          throw new Error('Authentication token missing');
+          throw new Error('Authentication token required');
         }
 
         const decoded = await verifyToken(token);
-        socket.data.userId = decoded.userId;
+        socket.data.user = decoded;
         next();
       } catch (error) {
         logger.error('WebSocket authentication error:', error);
         next(new Error('Authentication failed'));
       }
     });
-  }
 
-  private setupEventHandlers() {
     this.io.on('connection', (socket) => {
-      const userId = socket.data.userId;
-      
-      // Initialize client
-      this.clients.set(socket.id, {
-        id: socket.id,
-        userId,
-        lastHeartbeat: Date.now(),
-        messageQueue: [],
-      });
-
-      logger.info(`Client connected: ${socket.id}, User: ${userId}`);
-
-      // Handle heartbeat
-      socket.on('heartbeat', () => {
-        const client = this.clients.get(socket.id);
-        if (client) {
-          client.lastHeartbeat = Date.now();
-          this.clients.set(socket.id, client);
-          socket.emit('heartbeat_ack');
-        }
-      });
-
-      // Handle disconnection
-      socket.on('disconnect', (reason) => {
-        logger.info(`Client disconnected: ${socket.id}, Reason: ${reason}`);
-        this.handleDisconnect(socket.id, reason);
-      });
-
-      // Handle errors
-      socket.on('error', (error) => {
-        logger.error(`Socket error for client ${socket.id}:`, error);
-        this.handleError(socket.id, error);
-      });
-
-      // Send any queued messages
-      this.sendQueuedMessages(socket.id);
+      this.handleConnection(socket);
     });
   }
 
-  private startHeartbeatCheck() {
-    setInterval(() => {
-      const now = Date.now();
-      this.clients.forEach((client, socketId) => {
-        if (now - client.lastHeartbeat > this.CLIENT_TIMEOUT) {
-          logger.warn(`Client ${socketId} timed out`);
-          this.handleTimeout(socketId);
-        }
-      });
-    }, this.HEARTBEAT_INTERVAL);
+  private handleConnection(socket: Socket): void {
+    const userId = socket.data.user.id;
+    this.connectedClients.set(userId, socket);
+    logger.info(`Client connected: ${userId}`);
+
+    socket.on('disconnect', () => {
+      this.connectedClients.delete(userId);
+      logger.info(`Client disconnected: ${userId}`);
+    });
+
+    // Handle custom events
+    socket.on('message', (data) => this.handleMessage(socket, data));
+    socket.on('error', (error) => this.handleError(socket, error));
   }
 
-  private handleDisconnect(socketId: string, reason: string) {
-    const client = this.clients.get(socketId);
-    if (client) {
-      // Keep the client's message queue for potential reconnection
-      setTimeout(() => {
-        if (!this.isClientConnected(socketId)) {
-          this.clients.delete(socketId);
-          logger.info(`Client ${socketId} removed after disconnect timeout`);
-        }
-      }, this.RECONNECTION_DELAY * this.MAX_RECONNECTION_ATTEMPTS);
-    }
-  }
-
-  private handleTimeout(socketId: string) {
-    const socket = this.io.sockets.sockets.get(socketId);
-    if (socket) {
-      socket.disconnect(true);
-    }
-    this.clients.delete(socketId);
-  }
-
-  private handleError(socketId: string, error: any) {
-    const client = this.clients.get(socketId);
-    if (client) {
-      logger.error(`Error for client ${socketId}:`, error);
-      // Implement error-specific handling here
-    }
-  }
-
-  private isClientConnected(socketId: string): boolean {
-    return this.io.sockets.sockets.has(socketId);
-  }
-
-  private async sendQueuedMessages(socketId: string) {
-    const client = this.clients.get(socketId);
-    if (client && client.messageQueue.length > 0) {
-      const socket = this.io.sockets.sockets.get(socketId);
-      if (socket) {
-        while (client.messageQueue.length > 0) {
-          const message = client.messageQueue.shift();
-          try {
-            await socket.emit(message.event, message.data);
-            logger.info(`Queued message sent to client ${socketId}`);
-          } catch (error) {
-            logger.error(`Error sending queued message to client ${socketId}:`, error);
-            // Re-queue the message if sending fails
-            client.messageQueue.unshift(message);
-            break;
-          }
-        }
-      }
-    }
-  }
-
-  public broadcast(event: string, data: any, room?: string) {
+  private handleMessage(socket: Socket, data: any): void {
     try {
-      if (room) {
-        this.io.to(room).emit(event, data);
-        logger.info(`Broadcast to room ${room}: ${event}`);
-      } else {
-        this.io.emit(event, data);
-        logger.info(`Broadcast to all: ${event}`);
+      const message: QueuedMessage = {
+        event: 'message',
+        data,
+        timestamp: Date.now()
+      };
+
+      if (this.messageQueue.length >= this.maxQueueSize) {
+        this.messageQueue.shift(); // Remove oldest message
       }
+      this.messageQueue.push(message);
+
+      // Broadcast to all connected clients except sender
+      socket.broadcast.emit('message', data);
     } catch (error) {
-      logger.error('Broadcast error:', error);
-      // Queue messages for disconnected clients
-      this.queueMessageForOfflineClients(event, data);
+      logger.error('Error handling message:', error);
+      socket.emit('error', { message: 'Failed to process message' });
     }
   }
 
-  private queueMessageForOfflineClients(event: string, data: any) {
-    this.clients.forEach((client) => {
-      if (!this.isClientConnected(client.id)) {
-        client.messageQueue.push({ event, data });
-        logger.info(`Message queued for offline client ${client.id}`);
-      }
-    });
+  private handleError(socket: Socket, error: any): void {
+    logger.error('WebSocket error:', error);
+    socket.emit('error', { message: 'Internal server error' });
   }
 
   public getConnectedClients(): number {
-    return this.io.sockets.sockets.size;
+    return this.connectedClients.size;
   }
 
-  public getClientsByUser(userId: string): string[] {
-    const clientIds: string[] = [];
-    this.clients.forEach((client) => {
-      if (client.userId === userId) {
-        clientIds.push(client.id);
-      }
-    });
-    return clientIds;
+  public getQueueSize(): number {
+    return this.messageQueue.length;
+  }
+
+  public broadcastMessage(event: string, data: any): void {
+    this.io.emit(event, data);
+  }
+
+  public sendToUser(userId: string, event: string, data: any): boolean {
+    const socket = this.connectedClients.get(userId);
+    if (socket) {
+      socket.emit(event, data);
+      return true;
+    }
+    return false;
   }
 }

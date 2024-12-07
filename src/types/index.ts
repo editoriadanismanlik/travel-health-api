@@ -2,49 +2,64 @@ import { Request } from 'express';
 import { Document } from 'mongoose';
 
 export interface IUser extends Document {
-  username: string;
   email: string;
   password: string;
-  role: 'user' | 'admin';
-  createdAt: Date;
+  name: string;
+  role: 'admin' | 'user';
+  mfaEnabled: boolean;
+  mfaSecret?: string;
+  backupCodes?: { code: string; used: boolean; }[];
+  preferences?: {
+    widgets?: any[];
+    theme?: string;
+    notifications?: {
+      email: boolean;
+      push: boolean;
+    };
+  };
 }
 
 export interface IJob extends Document {
   title: string;
   description: string;
   location: string;
-  salary: number;
   status: 'open' | 'in-progress' | 'completed';
-  assignedTo?: string;
+  assignedTo: string;
   createdBy: string;
-  createdAt: Date;
+  dueDate: Date;
+  priority: 'low' | 'medium' | 'high';
+  tags: string[];
 }
 
 export interface ITask extends Document {
-  jobId: string;
   title: string;
   description: string;
-  status: 'pending' | 'in-progress' | 'completed';
+  jobId: string;
   assignedTo: string;
-  completedAt?: Date;
-  createdAt: Date;
+  createdBy: string;
+  status: 'pending' | 'in-progress' | 'completed';
+  dueDate: Date;
+  priority: 'low' | 'medium' | 'high';
 }
 
-export interface IEarnings extends Document {
+export interface IEarning extends Document {
   userId: string;
   jobId: string;
   amount: number;
+  date: Date;
+  description: string;
   status: 'pending' | 'paid';
-  paidAt?: Date;
-  createdAt: Date;
 }
 
 export interface AuthRequest extends Request {
-  userId?: string;
-  user?: IUser;
+  user?: {
+    userId: string;
+    role?: string;
+  };
 }
 
-export interface JwtPayload {
-  userId: string;
-  role?: string;
+export interface WebSocketEvent {
+  type: string;
+  data: any;
+  timestamp: number;
 }
