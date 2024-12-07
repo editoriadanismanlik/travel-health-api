@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: travel-health-api
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        value: mongodb+srv://editoriadanismanlik:Graf2021@cluster0.u0oyr.mongodb.net/travel-health
+      - key: JWT_SECRET
+        value: 3230fa30b35a03c3f5566188beb77d8f9dc69cc12c84084aa8958fd25ea863b1c4790de41edc3a4a8b64c9cdb407fc3bbd679dbd27ed78935cf78214f3ae7bb0 
