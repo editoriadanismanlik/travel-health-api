@@ -1,51 +1,29 @@
-import { WebSocketServer, WebSocket } from 'ws';
+import WebSocket from 'ws';
 import { verifyToken } from '../utils/auth';
-import { redis } from '../config/redis';
+import redisClient from '../config/redis';
 
-interface WebSocketClient extends WebSocket {
-  userId?: string;
-  isAlive: boolean;
+export class WebSocketService {
+  private wss: WebSocket.Server;
+
+  constructor() {
+    this.wss = new WebSocket.Server({ noServer: true });
+  }
+
+  handleUpgrade(request: any, socket: any, head: any) {
+    this.wss.handleUpgrade(request, socket, head, (ws) => {
+      this.wss.emit('connection', ws, request);
+    });
+  }
+
+  handleConnection(ws: WebSocket) {
+    ws.on('message', (message: string) => {
+      console.log('received: %s', message);
+    });
+
+    ws.on('close', () => {
+      console.log('client disconnected');
+    });
+  }
 }
 
-export const initializeWebSocket = (wss: WebSocketServer) => {
-  wss.on('connection', async (ws: WebSocketClient, req) => {
-    try {
-      // Verify token from query params
-      const token = new URL(req.url!, 'ws://localhost').searchParams.get('token');
-      if (!token) throw new Error('Authentication required');
-      
-      const decoded = await verifyToken(token);
-      ws.userId = decoded.userId;
-      ws.isAlive = true;
-
-      // Handle incoming messages
-      ws.on('message', async (data: string) => {
-        const message = JSON.parse(data);
-        // Handle different message types
-        switch (message.type) {
-          case 'TASK_UPDATE':
-            await handleTaskUpdate(message, ws);
-            break;
-          // Add more message handlers
-        }
-      });
-
-      // Handle client disconnect
-      ws.on('close', () => {
-        // Cleanup
-      });
-
-    } catch (error) {
-      ws.close();
-    }
-  });
-
-  // Implement heartbeat
-  const interval = setInterval(() => {
-    wss.clients.forEach((ws: WebSocketClient) => {
-      if (!ws.isAlive) return ws.terminate();
-      ws.isAlive = false;
-      ws.ping();
-    });
-  }, 30000);
-}; 
+export default new WebSocketService();
